@@ -1,13 +1,14 @@
 name: collect-vd
 # 每次執行連續收集約5.5小時（每分鐘一筆），每30分鐘存檔一次。
-# 排程每小時觸發一次；同時只跑一個，前一個結束後，排隊中的下一個會立刻接手，
-# 所以就算GitHub的排程延遲或漏跑，資料仍能大致連續。
+# 每次執行一開始就排好下一次（自我接力），排程每小時觸發只是備援；
+# 同時只跑一個，前一個結束後，排隊中的下一個會立刻接手。
 on:
   schedule:
     - cron: "7 * * * *"
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: collect-vd
   cancel-in-progress: false
@@ -17,6 +18,12 @@ jobs:
     timeout-minutes: 345
     steps:
       - uses: actions/checkout@v5
+      - name: Queue next run
+        # GitHub的排程在新repo常常不觸發，所以每次一開始就先排好下一次；
+        # 下一次會在本次結束後才開始（同一concurrency group只跑一個）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run collect.yml --ref main -R "${{ github.repository }}" || echo "::warning::queue next run failed"
       - name: Collect for ~5.5 hours
         run: |
           git config user.name "github-actions[bot]"
