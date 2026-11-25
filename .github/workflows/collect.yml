@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 345
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: main   # 一律取main最新版，避免停在舊commit（detached HEAD）導致存檔失敗
       - name: Queue next run
         # GitHub的排程在新repo常常不觸發，所以每次一開始就先排好下一次；
         # 下一次會在本次結束後才開始（同一concurrency group只跑一個）
@@ -32,7 +34,7 @@ jobs:
             git add data
             git diff --cached --quiet && return 0
             git commit -q -m "VD $(date -u +%Y-%m-%dT%H:%MZ)"
-            for i in 1 2 3; do git pull -q --rebase && git push -q && return 0; sleep 5; done
+            for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && return 0; sleep 5; done
           }
           end=$((SECONDS + 19800))
           last=$SECONDS
