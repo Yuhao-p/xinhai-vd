@@ -1,7 +1,8 @@
 name: collect-vd
-# 每次執行連續收集約5.5小時（每分鐘一筆），每30分鐘存檔一次。
-# 每次執行一開始就排好下一次（自我接力），排程每小時觸發只是備援；
-# 同時只跑一個，前一個結束後，排隊中的下一個會立刻接手。
+# 每次執行連續收集約5.5小時（每分鐘一筆），每10分鐘存檔一次；
+# 執行結束、逾時或被取消時，最後一步仍會把剩下的資料存檔。
+# 每次一開始就排好下一次（自我接力）；排程每小時觸發只是備援。
+# 同一時間只跑一個，前一個結束後，排隊中的下一個會立刻接手。
 on:
   schedule:
     - cron: "7 * * * *"
@@ -15,32 +16,25 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 345
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main   # 一律取main最新版，避免停在舊commit（detached HEAD）導致存檔失敗
+          ref: main   # 一律取main最新版，避免停在舊commit（detached HEAD）
       - name: Queue next run
-        # GitHub的排程在新repo常常不觸發，所以每次一開始就先排好下一次；
-        # 下一次會在本次結束後才開始（同一concurrency group只跑一個）
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run collect.yml --ref main -R "${{ github.repository }}" || echo "::warning::queue next run failed"
       - name: Collect for ~5.5 hours
+        timeout-minutes: 335
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          save() {
-            git add data
-            git diff --cached --quiet && return 0
-            git commit -q -m "VD $(date -u +%Y-%m-%dT%H:%MZ)"
-            for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && return 0; sleep 5; done
-          }
           end=$((SECONDS + 19800))
           last=$SECONDS
           while [ $SECONDS -lt $end ]; do
-            python3 collect.py || echo "fetch failed"
-            if [ $((SECONDS - last)) -ge 1800 ]; then save; last=$SECONDS; fi
+            python3 collect.py || echo "::warning::fetch failed $(date -u +%H:%MZ)"
+            if [ $((SECONDS - last)) -ge 600 ]; then ./save.sh; last=$SECONDS; fi
             sleep $((65 - 10#$(date +%S)))
           done
-          save
+      - name: Final save
+        if: always()
+        run: ./save.sh

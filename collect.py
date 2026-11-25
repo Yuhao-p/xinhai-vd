@@ -1,4 +1,4 @@
-"""抓北市交控中心即時VD資料（GetVD.xml.gz），只留辛亥路周邊路段，附加到 data/YYYY-MM-DD.csv。"""
+"""抓北市交控中心即時VD資料（GetVD.xml.gz），只留辛亥路周邊路段，附加到 data/日期_執行編號.csv（每個執行各寫各的檔，存檔時不會衝突）。"""
 import csv, gzip, os, re, urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -32,7 +32,8 @@ def main():
             rows.append([now.strftime("%Y-%m-%d %H:%M:%S"), xtime, sid, tag(b, "SectionName").strip(),
                          tag(b, "AvgSpd"), tag(b, "AvgOcc"), tag(b, "TotalVol")])
     os.makedirs("data", exist_ok=True)
-    path = os.path.join("data", now.strftime("%Y-%m-%d") + ".csv")
+    run_id = os.environ.get("GITHUB_RUN_ID", "local")
+    path = os.path.join("data", f"{now:%Y-%m-%d}_{run_id}.csv")
     new = not os.path.exists(path)
     with open(path, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
