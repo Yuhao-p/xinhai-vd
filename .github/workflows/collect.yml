@@ -1,55 +1,37 @@
-name: Taipei VD collector
-
-# 每小時觸發一次；每次執行會連續抓約5小時50分（每10分鐘一次）。
-# GitHub的排程常會延遲或漏跑，所以改成「長時間連續抓」：
-# 只要有一次觸發成功，就能涵蓋好幾個小時；排隊中的下一次會在前一次結束後接手。
+name: collect-vd
+# 每次執行連續收集約5.5小時（每分鐘一筆），每30分鐘存檔一次。
+# 排程每小時觸發一次；同時只跑一個，前一個結束後，排隊中的下一個會立刻接手，
+# 所以就算GitHub的排程延遲或漏跑，資料仍能大致連續。
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "7 * * * *"
   workflow_dispatch:
-
 permissions:
   contents: write
-
 concurrency:
-  group: vd-collector
+  group: collect-vd
   cancel-in-progress: false
-
 jobs:
-  fetch:
+  collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      BASE: https://tcgbusfs.blob.core.windows.net/blobtisv
-      LOOP_MINUTES: "345"      # 每次執行連續抓多久
-      INTERVAL_SECONDS: "600"  # 每10分鐘一次
+    timeout-minutes: 345
     steps:
-      - name: Collect VD snapshots in a loop
+      - uses: actions/checkout@v5
+      - name: Collect for ~5.5 hours
         run: |
-          set -uo pipefail
-          END=$(( $(date +%s) + LOOP_MINUTES*60 ))
-          while [ "$(date +%s)" -lt "$END" ]; do
-            START=$(date +%s)
-            TS=$(TZ=Asia/Taipei date +%Y%m%d_%H%M)
-            DAY=${TS%_*}
-            rm -rf out && mkdir -p out
-            # 車道層級資料（每個偵測器、每個車道的5分鐘流量與速度）
-            curl -fsS --retry 3 --retry-delay 10 --max-time 60 \
-                 -o "out/VDDATA_${TS}.xml.gz" "$BASE/GetVDDATA.xml.gz" \
-              && gzip -t "out/VDDATA_${TS}.xml.gz" || { echo "::warning::VDDATA failed $TS"; rm -f out/VDDATA_*; }
-            # 路段層級資料（含路段名稱、起訖座標、總流量）
-            curl -fsS --retry 3 --retry-delay 10 --max-time 60 \
-                 -o "out/VDSECTION_${TS}.xml.gz" "$BASE/GetVD.xml.gz" \
-              && gzip -t "out/VDSECTION_${TS}.xml.gz" || { echo "::warning::VD section failed $TS"; rm -f out/VDSECTION_*; }
-            if ls out/*.gz >/dev/null 2>&1; then
-              gh release view "vd-$DAY" >/dev/null 2>&1 || \
-                gh release create "vd-$DAY" --title "VD $DAY" \
-                   --notes "Taipei City VD snapshots (Asia/Taipei date $DAY)" || true
-              gh release upload "vd-$DAY" out/*.gz --clobber || echo "::warning::upload failed $TS"
-              echo "saved $TS"
-            fi
-            SLEEP=$(( INTERVAL_SECONDS - ($(date +%s) - START) ))
-            [ "$SLEEP" -gt 0 ] && sleep "$SLEEP"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          save() {
+            git add data
+            git diff --cached --quiet && return 0
+            git commit -q -m "VD $(date -u +%Y-%m-%dT%H:%MZ)"
+            for i in 1 2 3; do git pull -q --rebase && git push -q && return 0; sleep 5; done
+          }
+          end=$((SECONDS + 19800))
+          last=$SECONDS
+          while [ $SECONDS -lt $end ]; do
+            python3 collect.py || echo "fetch failed"
+            if [ $((SECONDS - last)) -ge 1800 ]; then save; last=$SECONDS; fi
+            sleep $((65 - 10#$(date +%S)))
           done
+          save
