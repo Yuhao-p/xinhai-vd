@@ -1,0 +1,31 @@
+# 一次性：抓辛亥路周邊OpenStreetMap圖資（道路、建物、綠地），供事故地圖底圖使用
+name: fetch-osm
+on:
+  push:
+    paths: ['.github/workflows/osm.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  osm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - name: Overpass query
+        run: |
+          Q='[out:json][timeout:60];(way["highway"](25.0185,121.5345,25.0255,121.5480);way["building"](25.0185,121.5345,25.0255,121.5480);way["leisure"](25.0185,121.5345,25.0255,121.5480);way["landuse"](25.0185,121.5345,25.0255,121.5480);way["amenity"="university"](25.0185,121.5345,25.0255,121.5480);relation["amenity"="university"](25.0185,121.5345,25.0255,121.5480););out geom;'
+          for i in 1 2 3; do
+            curl -sf -m 120 --data-urlencode "data=$Q" https://overpass-api.de/api/interpreter -o gis/osm_xinhai.json && break
+            curl -sf -m 120 --data-urlencode "data=$Q" https://overpass.kumi.systems/api/interpreter -o gis/osm_xinhai.json && break
+            sleep 20
+          done
+          ls -la gis/osm_xinhai.json
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gis/osm_xinhai.json
+          git commit -m "Add OSM extract around Xinhai Rd (© OpenStreetMap contributors, ODbL)"
+          for i in 1 2 3 4 5; do git pull --rebase origin main && git push origin HEAD:main && break || (git rebase --abort 2>/dev/null; sleep 5); done
