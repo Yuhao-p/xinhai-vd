@@ -1,4 +1,4 @@
-# 一次性：抓辛亥路周邊OpenStreetMap圖資（道路、建物、綠地），供事故地圖底圖使用
+# 一次性：從Geofabrik臺灣圖資裁切辛亥路周邊OpenStreetMap圖資（道路、建物、綠地），供事故地圖底圖使用
 name: fetch-osm
 on:
   push:
@@ -13,19 +13,18 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: main
-      - name: Overpass query
+      - name: Clip OSM (Geofabrik Taiwan extract)
         run: |
-          Q='[out:json][timeout:60];(way["highway"](25.0185,121.5345,25.0255,121.5480);way["building"](25.0185,121.5345,25.0255,121.5480);way["leisure"](25.0185,121.5345,25.0255,121.5480);way["landuse"](25.0185,121.5345,25.0255,121.5480);way["amenity"="university"](25.0185,121.5345,25.0255,121.5480);relation["amenity"="university"](25.0185,121.5345,25.0255,121.5480););out geom;'
-          for i in 1 2 3; do
-            curl -sf -m 120 --data-urlencode "data=$Q" https://overpass-api.de/api/interpreter -o gis/osm_xinhai.json && break
-            curl -sf -m 120 --data-urlencode "data=$Q" https://overpass.kumi.systems/api/interpreter -o gis/osm_xinhai.json && break
-            sleep 20
-          done
-          ls -la gis/osm_xinhai.json
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          curl -sfL -m 900 https://download.geofabrik.de/asia/taiwan-latest.osm.pbf -o /tmp/tw.pbf
+          osmium extract -b 121.5345,25.0185,121.5480,25.0255 --strategy=smart /tmp/tw.pbf -o /tmp/xinhai.pbf --overwrite
+          osmium export /tmp/xinhai.pbf -f geojson -o gis/osm_xinhai.geojson --overwrite \
+            --geometry-types=linestring,polygon
+          ls -la gis/osm_xinhai.geojson
       - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add gis/osm_xinhai.json
+          git add gis/osm_xinhai.geojson
           git commit -m "Add OSM extract around Xinhai Rd (© OpenStreetMap contributors, ODbL)"
           for i in 1 2 3 4 5; do git pull --rebase origin main && git push origin HEAD:main && break || (git rebase --abort 2>/dev/null; sleep 5); done
