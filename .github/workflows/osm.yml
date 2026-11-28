@@ -1,4 +1,4 @@
-# 一次性：從Geofabrik臺灣圖資裁切辛亥路周邊OpenStreetMap圖資（道路、建物、綠地），供事故地圖底圖使用
+# 一次性：從OpenStreetMap抓取辛亥路周邊OpenStreetMap圖資（道路、建物、綠地），供事故地圖底圖使用
 name: fetch-osm
 on:
   push:
@@ -13,13 +13,17 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: main
-      - name: Clip OSM (Geofabrik Taiwan extract)
+      - name: Fetch OSM
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
-          curl -sfL -m 900 https://download.geofabrik.de/asia/taiwan-latest.osm.pbf -o /tmp/tw.pbf
-          osmium extract -b 121.5345,25.0185,121.5480,25.0255 --strategy=smart /tmp/tw.pbf -o /tmp/xinhai.pbf --overwrite
+          # 小範圍直接用OSM官方API（bbox遠小於0.25平方度上限）；失敗才下載全臺圖資裁切
+          if ! curl -sSfL -m 300 "https://api.openstreetmap.org/api/0.6/map?bbox=121.5345,25.0185,121.5480,25.0255" -o /tmp/xinhai.osm; then
+            curl -sSfL -m 900 https://download.openstreetmap.fr/extracts/asia/taiwan-latest.osm.pbf -o /tmp/tw.pbf
+            osmium extract -b 121.5345,25.0185,121.5480,25.0255 --strategy=smart /tmp/tw.pbf -o /tmp/xinhai.osm --overwrite
+          fi
+          ls -la /tmp/xinhai.osm
           mkdir -p gis
-          osmium export /tmp/xinhai.pbf -f geojson -o gis/osm_xinhai.geojson --overwrite \
+          osmium export /tmp/xinhai.osm -f geojson -o gis/osm_xinhai.geojson --overwrite \
             --geometry-types=linestring,polygon
           ls -la gis/osm_xinhai.geojson
       - name: Commit
